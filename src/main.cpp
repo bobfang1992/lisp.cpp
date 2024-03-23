@@ -1,65 +1,82 @@
 #include <iostream>
 
 #include <editline/readline.h>
-
 #include <peglib.h>
 
-int main(int argc, char **argv) {
-
-    /* Print Version and Exit Information */
-    std::cout << "Lisp.cpp\n";
-    std::cout << "Press Ctrl+c to Exit\n";
-
-    peg::parser parser(R"(
-Lispy     <-  Expr+
+std::string LispGrammar = R"(
 Expr      <-  Number / '(' _ Operator _ ExprList _ ')'
 ExprList  <-  Expr (_ Expr)*
 Number    <-  '-'? [0-9]+
 Operator  <-  '+' / '-' / '*' / '/'
 _         <-  [ \t\r\n]*
-    )");
+)";
 
-    parser.set_logger([](size_t line, size_t col, const std::string& msg, const std::string &rule) {
-        std::cout << "Error:" << line << ":" << col << ": " << msg << "\n";
-    });
+void eval(const peg::Ast &ast) {
+  if (ast.name == "Number") {
+    std::cout << "Number: " << ast.token << "\n";
+  } else if (ast.name == "Operator") {
+    std::cout << "Operator: " << ast.token << "\n";
+  } else if (ast.name == "Expr") {
+    std::cout << "Expr: " << ast.nodes.size() << "\n";
+    for (auto &node : ast.nodes) {
+      eval(*node);
+    }
+  } else if (ast.name == "ExprList") {
+    std::cout << "ExprList: " << ast.nodes.size() << "\n";
+    for (auto &node : ast.nodes) {
+      eval(*node);
+    }
+  }
+}
 
-    parser["Operator"] = [](const peg::SemanticValues& val) {
-        std::cout << "Operator " << val.token_to_string()  << "\n";
-    };
+int main(int argc, char **argv) {
 
-    parser["Lispy"] = [](const peg::SemanticValues& val) {
-        std::cout << "Lispy " << val.token_to_string()  << "\n";
-    };
+  /* Print Version and Exit Information */
+  std::cout << "Lisp.cpp\n";
+  std::cout << "Press Ctrl+c to Exit\n";
 
-    parser["Expr"] = [](const peg::SemanticValues& val) {
-        std::cout << "Expr " << val.token_to_string()  << "\n";
-    };
+  peg::parser parser(LispGrammar);
 
-    parser["Number"] = [](const peg::SemanticValues& val) {
-        std::cout << "Number " << val.token_to_string()  << "\n";
-    };
+  parser.set_logger([](size_t line, size_t col, const std::string &msg,
+                       const std::string &rule) {
+    std::cout << "Error:" << line << ":" << col << ": " << msg << "\n";
+  });
 
-    assert(static_cast<bool>(parser) == true);
+  parser.enable_ast();
 
-    /* In a never ending loop */
-    while (true) {
+  assert(static_cast<bool>(parser) == true);
 
-        /* Output our prompt and get input */
-        char *input = readline("lisp.cpp> ");
+  /* In a never ending loop */
+  while (true) {
 
-        /* Add input to history */
-        add_history(input);
+    /* Output our prompt and get input */
+    char *input = readline("lisp.cpp> ");
 
-        if (std::string(input) == "exit") {
-            exit(0);
-        }
-        /* Echo input back to user */
-        std::cout << "parsing result: " << std::boolalpha << parser.parse(input) << "\n";
+    /* Add input to history */
+    add_history(input);
 
-        /* Free retrieved input */
-        free(input);
-
+    if (std::string(input) == "exit") {
+      exit(0);
     }
 
-    return 0;
+    std::shared_ptr<peg::Ast> ast;
+
+    auto success = parser.parse(input, ast);
+
+    if (!success) {
+      std::cout << "Syntax Error\n";
+      return 1;
+    }
+
+    ast = parser.optimize_ast(ast);
+
+    std::cout << "AST: " << peg::ast_to_s(ast) << "\n\n";
+
+    eval(*ast);
+
+    /* Free retrieved input */
+    free(input);
+  }
+
+  return 0;
 }
